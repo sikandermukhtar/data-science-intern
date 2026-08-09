@@ -196,7 +196,7 @@ function PromptInputActions({
 export type PromptInputActionProps = {
   className?: string
   tooltip: React.ReactNode
-  children: React.ReactNode
+  children: React.ReactElement
   side?: "top" | "bottom" | "left" | "right"
 } & React.ComponentProps<typeof Tooltip>
 
@@ -214,6 +214,7 @@ function PromptInputAction({
       <TooltipTrigger
         disabled={disabled}
         onClick={(event) => event.stopPropagation()}
+        render={children}
       >
         {children}
       </TooltipTrigger>

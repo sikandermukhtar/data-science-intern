@@ -1,5 +1,7 @@
+"use client"
+
 import { useState } from "react";
-import { ArrowUp, Paperclip, X } from "lucide-react";
+import { ArrowUp, Paperclip, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   PromptInput,
@@ -7,89 +9,127 @@ import {
   PromptInputActions,
   PromptInputTextarea,
 } from "@/components/ui/prompt-input";
+import {
+    FileUpload,
+    FileUploadContent,
+    FileUploadTrigger
+} from "@/components/ui/file-upload";
 
 export default function ChatInput() {
     const [prompt, setPrompt] = useState("")
     const [files, setFiles] = useState<File[]>([]);
+    const [isLoading, setIsLoading] = useState(false)
 
+    const handleFilesUploaded = (newFiles: File[]) => {
+        setFiles((prev) => [...prev, ...newFiles])
+    }
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) {
-            setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
+    const removeFile = (index: number) => {
+        setFiles((prev) => prev.filter((_, i) => i != index))
+    }
+
+    const handleSubmit = () => {
+        if (prompt.trim() || files.length > 0) {
+            setIsLoading(true),
+            setTimeout(() => {
+                setIsLoading(false)
+                setPrompt("")
+                setFiles([])
+            }, 2000)
         }
     }
 
-    const removeFile = (indexToRemove: number) => {
-        setFiles(files.filter((_, i) => i !== indexToRemove));
-    };
-
-    const handleSubmit = () => {
-        if (!prompt.trim() && files.length == 0) return;
-        console.log("Submitting prompt: ", prompt, "Files: ", files);
-        setFiles([]);
-        setPrompt("");
-    }
-
     return (
-        <div className="w-full max-w-3xl mx-auto flex flex-col gap-2">
-        
-
+       <FileUpload
+            onFilesAdded={handleFilesUploaded}
+            accept=".jpg,.jpeg,.png,.pdf,.docx, .md, .mdx"
+       >
         <PromptInput
-            className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-zinc-200 dark:focus-within:ring-zinc-700 transition-all"
+            value={prompt}
+            onValueChange={setPrompt}
+            isLoading={isLoading}
+            onSubmit={handleSubmit} 
+            className="w-full max-w-3xl"
         >
             {files.length > 0 && (
-                <div className="flex flex-wrap gap-2 px-2">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pb-2">
                     {files.map((file, i) => (
-                        <div key={i} className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 rounded-lg text-xs border border-zinc-200 dark:border-zinc-700">
-                            <span className="truncate max-w-[120px] font-medium">{file.name}</span>
-                            <button onClick={() => removeFile(i)} className="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">
-                                <X className="w-3 h-3" />
+                        <div 
+                            key={i}
+                            className="bg-secondary flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="flex items-center gap-2">
+                                <Paperclip className="size-4" />
+                                <span className="max-w-[80px] truncate text-sm">
+                                    {file.name}
+                                </span>
+                            </div>
+                            <button
+                                onClick={() => removeFile(i)}
+                                className="hover:bg-secondary/50 rounded-full p-1"
+                                >
+                                <X className="size-4" />
                             </button>
                         </div>
                     ))}
                 </div>
             )}
-            <PromptInputTextarea
-                placeholder="Ask data-science-intern a question or attach files..."
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSubmit();
-                    }
-                }}
-                className="min-h-[60px] px-4 py-4 resize-none border-none focus-visible:ring-0 shadow-none text-base"
-            />
-            <div className="flex items-center justify-between px-3 pb-3 pt-1">
-                <PromptInputActions className="left-2">
-                    <div className="relative">
-                    <PromptInputAction tooltip="Attach files">
-                        <Paperclip className="w-4 h-4 text-zinc-500" />
-                    </PromptInputAction>
-                    <input
-                        type="file"
-                        multiple
-                        className="absolute inset-0 opacity-0 cursor-pointer"
-                        onChange={handleFileChange}
-                        title="Upload files"
-                    />
-                    </div>
-                </PromptInputActions>
 
-                <PromptInputActions className="right-2">
-                    <Button 
-                    size="icon" 
-                    className="h-8 w-8 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200"
-                    onClick={handleSubmit}
-                    disabled={!prompt.trim() && files.length === 0}
+            <PromptInputTextarea placeholder="Assign intern some task, or drop files..." />
+            
+            <PromptInputActions className="flex items-center justify-between gap-2 pt-2">
+                <PromptInputAction tooltip="Attach files">
+                    <FileUploadTrigger asChild>
+                        <div className="hover:bg-secondary-foreground/10 flex h-8 w-8 cursor-pointer items-center justify-center rounded-2xl">
+                            <Paperclip className="text-primary size-5" />
+                        </div>
+                    </FileUploadTrigger>
+                </PromptInputAction>
+
+                <PromptInputAction tooltip={isLoading? "Stop generation": "Send Message"}>
+                    <Button
+                        variant="default"
+                        size="icon"
+                        className="h-8 w-8 rounded-full"
+                        onClick={handleSubmit}
                     >
-                    <ArrowUp className="w-4 h-4" />
+                        {isLoading ? (
+                            <Square className="size-5 fill-current" />
+                        ) : (
+                            <ArrowUp className="size-5" />
+                        )}
                     </Button>
-                </PromptInputActions>
-            </div>
+                </PromptInputAction>
+            </PromptInputActions>
         </PromptInput>
-
-        </div>
+        <FileUploadContent>
+            <div className="flex min-h-[200px] w-full items-center justify-center backdrop-blur-sm">
+                <div className="bg-background/90 m-4 w-full max-w-md rounded-lg border p-8 shadow-lg">
+                    <div className="mb-4 flex justify-center">
+                        <svg
+                            className="text-muted size-8"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
+                            />
+                        </svg>
+                    </div>
+                    <h3 className="mb-2 text-center text-base font-medium">
+                        Drop files to upload
+                    </h3>
+                    <p className="text-muted-foreground text-center text-sm">
+                        Release to add files to your message
+                    </p>
+                </div>
+            </div>
+        </FileUploadContent>
+       </FileUpload>
     )
 }

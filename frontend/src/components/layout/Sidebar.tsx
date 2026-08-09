@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { Plus, X, Sidebar as SidebarIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/store/useAppStore";
 
@@ -15,12 +15,39 @@ export default function Sidebar() {
         )}
 
         <aside className={`
-            fixed md:static inset-y-0 left-0 z-50 w-64 bg-zinc-100 dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 transform transition-transform duration-200 ease-in-out flex flex-col
-            ${isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
+            fixed inset-y-0 left-0 z-50 w-full md:w-64 bg-zinc-100 dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 transform transition-transform duration-200 ease-in-out flex flex-col
+            ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}
         `}>
+
             <div className="p-4 flex justify-between items-center border-b border-zinc-200 dark:border-zinc-800">
                 <span className="font-semibold text-sm">data-science-intern</span>
+                <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => setSidebarOpen(false)}
+                    className="hidden md:flex text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                    title="Collapse Sidebar"
+                >
+                    <SidebarIcon className="w-5 h-5" />
+                </Button>
+                <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => setSidebarOpen(false)}
+                    className="md:hidden text-zinc-500"
+                >
+                    <X className="w-5 h-5" />
+                </Button>
             </div>
+
+            
+            {/* <div className="p-4 flex justify-between items-center border-b border-zinc-200 dark:border-zinc-800">
+                <span className="font-semibold text-sm">data-science-intern</span>
+                <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)} className="md:hidden text-zinc-500">
+                    <X className="w-5 h-5" />
+                </Button>
+            </div> */}
+            
             <div className="p-2">
                 <Button variant="outline" className="w-full justify-start gap-2 shadow-sm">
                     <Plus className="w-4 h-4" />
