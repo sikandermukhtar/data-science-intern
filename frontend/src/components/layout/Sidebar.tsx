@@ -1,9 +1,11 @@
 import { Plus, X, Sidebar as SidebarIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/store/useAppStore";
+import { useChatStore } from "@/store/useChatStore";
 
 export default function Sidebar() {
     const { isSidebarOpen, setSidebarOpen } = useAppStore();
+    const { sessions, activeSessionId, setCurrentSession, createNewSession } = useChatStore();
 
     return (
        <>
@@ -39,26 +41,41 @@ export default function Sidebar() {
                     <X className="w-5 h-5" />
                 </Button>
             </div>
-
-            
-            {/* <div className="p-4 flex justify-between items-center border-b border-zinc-200 dark:border-zinc-800">
-                <span className="font-semibold text-sm">data-science-intern</span>
-                <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)} className="md:hidden text-zinc-500">
-                    <X className="w-5 h-5" />
-                </Button>
-            </div> */}
             
             <div className="p-2">
-                <Button variant="outline" className="w-full justify-start gap-2 shadow-sm">
+                <Button variant="outline" className="w-full justify-start gap-2 shadow-sm"
+                    onClick={() => {
+                        createNewSession();
+                        if (window.innerWidth < 768) {
+                            setSidebarOpen(false);
+                        }
+                    }}
+                >
                     <Plus className="w-4 h-4" />
                     New Session
                 </Button>
             </div>
+
             <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                <div className="px-3 py-2 text-xs font-medium text-zinc-500">Today</div>
-                <button className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors truncate">
-                    Setup React Project
-                </button>
+                <div className="px-3 py-2 text-xs font-medium text-zinc-500">Recent</div>
+                {sessions.map((session) => (
+                    <button
+                        key={session.id}
+                        onClick={() => {
+                            setCurrentSession(session.id);
+                            if (window.innerWidth < 768) {
+                                setSidebarOpen(false);
+                            }
+                        }}
+                        className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors truncate ${
+                            activeSessionId === session.id
+                                ? "bg-zinc-200 dark:bg-zinc-850 font-medium text-zinc-900 dark:text-zinc-50"
+                                : "hover:bg-zinc-200 dark:hover:bg-zinc-800/50 text-zinc-600 dark:text-zinc-400"
+                        }`}
+                    >
+                        {session.title}
+                    </button>
+                ))}
             </div>
         </aside>
 

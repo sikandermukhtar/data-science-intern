@@ -7,9 +7,9 @@ export interface FileAttachment {
 
 export interface Message {
     id: string;
-    role: 'url' | 'agent';
+    role: 'user' | 'assistant';
     content: string;
-    files?: FileAttachment;
+    files?: FileAttachment[];
     timestamp: number;
 }
 

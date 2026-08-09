@@ -15,10 +15,13 @@ import {
     FileUploadTrigger
 } from "@/components/ui/file-upload";
 
+import { useChatStore } from "@/store/useChatStore";
+
 export default function ChatInput() {
     const [prompt, setPrompt] = useState("")
     const [files, setFiles] = useState<File[]>([]);
-    const [isLoading, setIsLoading] = useState(false)
+    const [isLoading, setIsLoading] = useState(false);
+    const { sendMessage } = useChatStore();
 
     const handleFilesUploaded = (newFiles: File[]) => {
         setFiles((prev) => [...prev, ...newFiles])
@@ -29,14 +32,10 @@ export default function ChatInput() {
     }
 
     const handleSubmit = () => {
-        if (prompt.trim() || files.length > 0) {
-            setIsLoading(true),
-            setTimeout(() => {
-                setIsLoading(false)
-                setPrompt("")
-                setFiles([])
-            }, 2000)
-        }
+        if (!prompt.trim() && files.length === 0) return;
+            sendMessage(prompt, files);
+            setFiles([]);
+            setPrompt("");
     }
 
     return (

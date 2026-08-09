@@ -125,7 +125,6 @@
   }
 }
 
-
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: 'Inter Variable', 'Inter Fallback', sans-serif;
