@@ -13,3 +13,5 @@ wheels/
 frontend/public/confusion_matrix.svg
 frontend/public/correlation_heatmap.svg
 frontend/public/outcome_distribution.svg
+sessions/
+sandbox/

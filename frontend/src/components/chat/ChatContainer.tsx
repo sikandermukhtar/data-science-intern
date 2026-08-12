@@ -7,7 +7,7 @@ import { useRef, useEffect, useState } from "react";
 import { Loader2, Download, X } from "lucide-react";
 
 export default function ChatContainer() {
-  const { activeSessionId, messages, isLoading } = useChatStore();
+  const { activeSessionId, messages, isLoading, loadingStatus } = useChatStore();
   const activeMessages = activeSessionId ? messages[activeSessionId] || [] : [];
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -151,7 +151,7 @@ export default function ChatContainer() {
               <PromptMessage role="assistant" className="w-full">
                 <div className="flex items-center gap-2 text-zinc-500 text-sm">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Thinking and running code...</span>
+                  <span>{loadingStatus || "Thinking and running code..."}</span>
                 </div>
               </PromptMessage>
             )}

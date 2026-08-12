@@ -1,213 +1,255 @@
 import { create } from 'zustand';
 import type { Message, ChatSession, FileAttachment } from '@/types/chat';
 
+const BACKEND_URL = 'http://localhost:8000';
+const WS_URL = 'ws://localhost:8000';
+
 interface ChatState {
     sessions: ChatSession[];
     activeSessionId: string | null;
     messages: Record<string, Message[]>;
     isLoading: boolean;
-    setCurrentSession: (sessionId: string) => void;
-    createNewSession: () => void;
-    sendMessage: (content: string, files?: File[]) => void;
+    loadingStatus: string | null;
+    init: () => Promise<void>;
+    setCurrentSession: (sessionId: string) => Promise<void>;
+    createNewSession: () => Promise<void>;
+    sendMessage: (content: string, files?: File[]) => Promise<void>;
 }
 
+let activeWs: WebSocket | null = null;
 export const useChatStore = create<ChatState>((set, get) => {
     
-    const dummySessionId = 'dummy-session-1';
-    const dummyMessages: Message[] = [
-        {
-            id: 'm1',
-            role: 'user',
-            content: 'Hey, I uploaded `diabetes.csv`. Can you run a correlation analysis on the features and show me the distribution of the outcome variable?',
-            files: [
-                { name: 'diabetes.csv', size: 23840, type: 'text/csv' }
-            ],
-            timestamp: Date.now() - 3600000 * 2,
-        },
-        {
-            id: 'm2',
-            role: 'assistant',
-            content: `I have loaded the \`diabetes.csv\` dataset. Let's perform a correlation analysis of the feature columns and plot the heatmap, along with the distribution of the target \`Outcome\` column.
-
-### Dataset Overview
-Here is a summary of the first few rows and types:
-
-| Column | Non-Null Count | Dtype | Description |
-| :--- | :--- | :--- | :--- |
-| **Pregnancies** | 768 non-null | int64 | Number of times pregnant |
-| **Glucose** | 768 non-null | int64 | Plasma glucose concentration |
-| **BloodPressure** | 768 non-null | int64 | Diastolic blood pressure (mm Hg) |
-| **BMI** | 768 non-null | float64 | Body mass index (weight in kg/(height in m)^2) |
-| **Age** | 768 non-null | int64 | Age (years) |
-| **Outcome** | 768 non-null | int64 | Class variable (0 or 1) |
-
-Below is the Python script used to compute the correlations and plot the charts:`,
-            timestamp: Date.now() - 3600000 * 2 + 5000,
-        },
-        {
-            id: 'm3',
-            role: 'assistant',
-            content: `\`\`\`python
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-# Load dataset
-df = pd.read_csv('diabetes.csv')
-
-# Compute correlation matrix
-corr = df.corr()
-
-# Plot heatmap
-plt.figure(figsize=(10, 8))
-sns.heatmap(corr, annot=True, cmap='coolwarm', fmt='.2f')
-plt.title('Correlation Matrix of Diabetes Features')
-plt.savefig('correlation_heatmap.png')
-plt.close()
-
-# Plot outcome distribution
-plt.figure(figsize=(6, 4))
-sns.countplot(x='Outcome', data=df, palette='Set2')
-plt.title('Distribution of Diabetic Outcome')
-plt.savefig('outcome_distribution.png')
-plt.close()
-\`\`\`
-
-Here are the generated visualizations:`,
-            timestamp: Date.now() - 3600000 * 2 + 10000,
-        },
-        {
-            id: 'm4',
-            role: 'assistant',
-            content: '---charts---', 
-            files: [
-                {
-                    name: 'correlation_heatmap.png',
-                    size: 45210,
-                    type: 'image/png',
-                    url: '/correlation_heatmap.png'
-                },
-                {
-                    name: 'feature_importance.png',
-                    size: 32410,
-                    type: 'image/png',
-                    url: '/outcome_distribution.png'
-                }
-            ],
-            timestamp: Date.now() - 3600000 * 2 + 12000,
+    const connectWebSocket = (sessionId: string) => {
+        if (activeWs) {
+            activeWs.close();
+            activeWs = null;
         }
-    ];
-
+        const ws = new WebSocket(`${WS_URL}/ws/chat/${sessionId}`);
+        activeWs = ws;
+        ws.onopen = () => {
+            console.log(`WebSocket connected for session: ${sessionId}`);
+        };
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            const { event_type, payload } = data;
+            const currentMessages = get().messages[sessionId] || [];
+            switch (event_type) {
+                case 'worker_spawned':
+                    set({
+                        isLoading: true,
+                        loadingStatus: `Worker running task: ${payload.task}`
+                    });
+                    break;
+                case 'processing':
+                    set({
+                        isLoading: true,
+                        loadingStatus: payload.status
+                    });
+                    break;
+                case 'code_executed':
+                    const codeMsg: Message = {
+                        id: `code-${Date.now()}-${Math.random()}`,
+                        role: 'assistant',
+                        content: `#### 💻 Running Sandbox Script\n\`\`\`python\n${payload.code}\n\`\`\`\n\n**Console Output:**\n\`\`\`\n${payload.stdout || '(No stdout)'}\n${payload.stderr ? 'STDERR:\n' + payload.stderr : ''}\n\`\`\``,
+                        timestamp: Date.now()
+                    };
+                    const updatedWithCode = [...currentMessages, codeMsg];
+                    // If charts or files were generated, append a file visualization bubble
+                    const imageFiles = payload.files ? payload.files.filter((f: any) => f.type.startsWith('image/')) : [];
+                    if (imageFiles.length > 0) {
+                        const chartMsg: Message = {
+                            id: `chart-${Date.now()}-${Math.random()}`,
+                            role: 'assistant',
+                            content: '---charts---',
+                            files: imageFiles.map((f: any) => ({
+                                name: f.name,
+                                size: f.size,
+                                type: f.type,
+                                url: `${BACKEND_URL}${f.url}`
+                            })),
+                            timestamp: Date.now() + 100
+                        };
+                        updatedWithCode.push(chartMsg);
+                    }
+                    set((state) => ({
+                        messages: {
+                            ...state.messages,
+                            [sessionId]: updatedWithCode
+                        }
+                    }));
+                    break;
+                case 'turn_complete':
+                    // Append final synthesized response
+                    const responseMsg: Message = {
+                        id: `resp-${Date.now()}`,
+                        role: 'assistant',
+                        content: payload.content,
+                        timestamp: Date.now()
+                    };
+                    set((state) => ({
+                        messages: {
+                            ...state.messages,
+                            [sessionId]: [...(state.messages[sessionId] || []), responseMsg]
+                        },
+                        isLoading: false,
+                        loadingStatus: null
+                    }));
+                    break;
+                case 'error':
+                    // error summary
+                    const errorMsg: Message = {
+                        id: `err-${Date.now()}`,
+                        role: 'assistant',
+                        content: `❌ **Pipeline Error**\n\`\`\`\n${payload.message}\n\`\`\`\n*Details:*\n\`\`\`\n${payload.details || ''}\n\`\`\``,
+                        timestamp: Date.now()
+                    };
+                    set((state) => ({
+                        messages: {
+                            ...state.messages,
+                            [sessionId]: [...(state.messages[sessionId] || []), errorMsg]
+                        },
+                        isLoading: false,
+                        loadingStatus: null
+                    }));
+                    break;
+                default:
+                    break;
+            }
+        };
+        ws.onclose = () => {
+            console.log(`WebSocket closed for session: ${sessionId}`);
+        };
+        ws.onerror = (err) => {
+            console.error('WebSocket error:', err);
+        };
+    };
     return {
-        sessions: [
-            { id: dummySessionId, title: 'Analyze diabetes.csv', updatedAt: Date.now() }
-        ],
-        activeSessionId: dummySessionId,
-        messages: {
-            [dummySessionId]: dummyMessages
-        },
+        sessions: [],
+        activeSessionId: null,
+        messages: {},
         isLoading: false,
-
-        setCurrentSession: (sessionId) => set({ activeSessionId: sessionId }),
-
-        createNewSession: () => {
-            const newSessionId = `session-${Date.now()}`;
-            const newSession: ChatSession = {
-                id: newSessionId,
-                title: 'New Session',
-                updatedAt: Date.now(),
-            };
-            set((state) => ({
-                sessions: [newSession, ...state.sessions],
-                activeSessionId: newSessionId,
-                messages: {
-                    ...state.messages,
-                    [newSessionId]: []
+        loadingStatus: null,
+        init: async () => {
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/sessions`);
+                const sessions = await res.json();
+                
+                set({ sessions });
+                if (sessions.length > 0) {
+                    await get().setCurrentSession(sessions[0].id);
+                } else {
+                    await get().createNewSession();
                 }
-            }));
+            } catch (err) {
+                console.error('Failed to initialize chat store:', err);
+            }
         },
-
-        sendMessage: (content, files) => {
+        setCurrentSession: async (sessionId) => {
+            set({ activeSessionId: sessionId });
+            
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/messages`);
+                const backendMessages = await res.json();
+                // Format messages (prefix URLs with API path)
+                const formattedMessages: Message[] = backendMessages
+                    .filter((m: any) => m.role !== 'system') // Filter system prompts from render
+                    .map((msg: any, index: number) => ({
+                        id: msg.id || `msg-${index}-${Date.now()}`,
+                        role: msg.role,
+                        content: msg.content,
+                        files: msg.files ? msg.files.map((f: any) => ({
+                            ...f,
+                            url: f.url ? (f.url.startsWith('http') ? f.url : `${BACKEND_URL}${f.url}`) : undefined
+                        })) : undefined,
+                        timestamp: msg.timestamp || Date.now()
+                    }));
+                set((state) => ({
+                    messages: {
+                        ...state.messages,
+                        [sessionId]: formattedMessages
+                    }
+                }));
+                connectWebSocket(sessionId);
+            } catch (err) {
+                console.error(`Failed to load messages for session ${sessionId}:`, err);
+            }
+        },
+        createNewSession: async () => {
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/sessions`, { method: 'POST' });
+                const { id } = await res.json();
+                const newSession: ChatSession = {
+                    id,
+                    title: 'New Session',
+                    updatedAt: Date.now()
+                };
+                set((state) => ({
+                    sessions: [newSession, ...state.sessions],
+                    activeSessionId: id,
+                    messages: {
+                        ...state.messages,
+                        [id]: []
+                    }
+                }));
+                connectWebSocket(id);
+            } catch (err) {
+                console.error('Failed to create new session:', err);
+            }
+        },
+        sendMessage: async (content, files) => {
             const { activeSessionId, messages } = get();
             if (!activeSessionId) return;
-
             const sessionMessages = messages[activeSessionId] || [];
-
             
-            const userFiles: FileAttachment[] = files ? files.map(f => ({
-                name: f.name,
-                size: f.size,
-                type: f.type,
-                url: URL.createObjectURL(f)
-            })) : [];
-
+            const uploadedFiles: FileAttachment[] = [];
+            if (files && files.length > 0) {
+                set({ isLoading: true, loadingStatus: 'Uploading files...' });
+                for (const file of files) {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    try {
+                        const res = await fetch(`${BACKEND_URL}/api/sessions/${activeSessionId}/upload`, {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const data = await res.json();
+                        uploadedFiles.push({
+                            name: data.filename,
+                            size: data.size,
+                            type: file.type,
+                            url: `/static/${activeSessionId}/${data.filename}`
+                        });
+                    } catch (err) {
+                        console.error(`Failed to upload file ${file.name}:`, err);
+                    }
+                }
+            }
             const userMsg: Message = {
                 id: `u-${Date.now()}`,
                 role: 'user',
                 content,
-                files: userFiles.length > 0 ? userFiles : undefined,
-                timestamp: Date.now(),
+                files: uploadedFiles.length > 0 ? uploadedFiles : undefined,
+                timestamp: Date.now()
             };
-
             set((state) => ({
                 messages: {
                     ...state.messages,
                     [activeSessionId]: [...sessionMessages, userMsg]
                 },
                 isLoading: true,
+                loadingStatus: 'Sending message...'
             }));
-
-            
-            setTimeout(() => {
-                const updatedMessages = get().messages[activeSessionId] || [];
-                const responseMsg: Message = {
-                    id: `a-${Date.now()}`,
-                    role: 'assistant',
-                    content: `Here is the evaluation response to your query: **"${content}"**.
-
-As your Data Science Intern, I have simulated a backend run on your data. Here is a sample metric distribution:
-
-| Metric | Score | Status |
-| :--- | :--- | :--- |
-| **Accuracy** | 0.89 | Optimal |
-| **Precision** | 0.86 | Stable |
-| **Recall** | 0.91 | Excellent |
-
-Here is the classification evaluation script:
-\`\`\`python
-# Evaluated model performance
-from sklearn.metrics import classification_report
-
-print(classification_report(y_true, y_pred))
-\`\`\`
-
-Here is the confusion matrix chart generated from the evaluation:`,
-                    timestamp: Date.now(),
-                };
-
-                const chartMsg: Message = {
-                    id: `a-chart-${Date.now()}`,
-                    role: 'assistant',
-                    content: '---charts---',
-                    files: [
-                        {
-                            name: 'confusion_matrix.png',
-                            size: 29810,
-                            type: 'image/png',
-                            url: '/confusion_matrix.png'
-                        }
-                    ],
-                    timestamp: Date.now() + 500
-                };
-
-                set((state) => ({
-                    messages: {
-                        ...state.messages,
-                        [activeSessionId]: [...updatedMessages, responseMsg, chartMsg]
-                    },
-                    isLoading: false,
+            // Emit prompt payload to live agent run via WebSocket
+            if (activeWs && activeWs.readyState === WebSocket.OPEN) {
+                activeWs.send(JSON.stringify({
+                    type: 'message',
+                    content,
+                    files: uploadedFiles.length > 0 ? uploadedFiles : undefined
                 }));
-            }, 1500);
+            } else {
+                console.error('WebSocket connection is not active');
+                set({ isLoading: false, loadingStatus: null });
+            }
         }
     };
 });
