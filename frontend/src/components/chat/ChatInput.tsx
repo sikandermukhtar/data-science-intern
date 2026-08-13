@@ -41,7 +41,7 @@ export default function ChatInput() {
     return (
        <FileUpload
             onFilesAdded={handleFilesUploaded}
-            accept=".jpg,.jpeg,.png,.pdf,.docx, .md, .mdx"
+            accept=".csv, .jpg,.jpeg,.png,.pdf,.docx, .md, .mdx"
        >
         <PromptInput
             value={prompt}
