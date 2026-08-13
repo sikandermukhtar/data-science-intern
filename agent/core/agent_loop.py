@@ -150,11 +150,29 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
                 
         final_answer = await generate_final_response(session_id, user_query, state["worker_results"])
         
+        all_images = []
+        seen_filenames = set()
+        for res in state["worker_results"]:
+            for f in res.get("files", []):
+                if f["type"].startswith("image/") and f["name"] not in seen_filenames:
+                    all_images.append(f)
+                    seen_filenames.add(f["name"])
+                    
         session_state.context_manager.add_message("assistant", final_answer)
+        
+        if all_images:
+            session_state.context_manager.add_message(
+                role="assistant",
+                content="---charts---",
+                files=all_images
+            )
         
         await session_state.push_event(
             EventType.TURN_COMPLETE,
-            {"content": final_answer}
+            {
+                "content": final_answer,
+                "files": all_images if all_images else None
+            }
         )
         
         return {"final_response": final_answer}

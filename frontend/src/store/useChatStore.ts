@@ -86,17 +86,33 @@ export const useChatStore = create<ChatState>((set, get) => {
                         content: payload.content,
                         timestamp: Date.now()
                     };
+                    const updatedMessages = [...(get().messages[sessionId] || []), responseMsg];
+                    const finalImages = payload.files ? payload.files.filter((f: any) => f.type.startsWith('image/')) : [];
+                    if (finalImages.length > 0) {
+                        const chartMsg: Message = {
+                            id: `chart-final-${Date.now()}`,
+                            role: 'assistant',
+                            content: '---charts---',
+                            files: finalImages.map((f: any) => ({
+                                name: f.name,
+                                size: f.size,
+                                type: f.type,
+                                url: `${BACKEND_URL}${f.url}`
+                            })),
+                            timestamp: Date.now() + 100
+                        };
+                        updatedMessages.push(chartMsg);
+                    }
                     set((state) => ({
                         messages: {
                             ...state.messages,
-                            [sessionId]: [...(state.messages[sessionId] || []), responseMsg]
+                            [sessionId]: updatedMessages
                         },
                         isLoading: false,
                         loadingStatus: null
                     }));
                     break;
                 case 'error':
-                    // error summary
                     const errorMsg: Message = {
                         id: `err-${Date.now()}`,
                         role: 'assistant',
