@@ -6,17 +6,24 @@ const WS_URL = 'ws://localhost:8000';
 
 interface ChatState {
     sessions: ChatSession[];
+    archivedSessions: ChatSession[];
     activeSessionId: string | null;
     messages: Record<string, Message[]>;
     isLoading: boolean;
     loadingStatus: string | null;
     init: () => Promise<void>;
+    fetchSessions: () => Promise<void>;
+    fetchArchivedSessions: () => Promise<void>;
     setCurrentSession: (sessionId: string) => Promise<void>;
     createNewSession: () => Promise<void>;
     sendMessage: (content: string, files?: File[]) => Promise<void>;
+    archiveSession: (sessionId: string) => Promise<void>;
+    unarchiveSession: (sessionId: string) => Promise<void>;
+    deleteSession: (sessionId: string) => Promise<void>;
 }
 
 let activeWs: WebSocket | null = null;
+
 export const useChatStore = create<ChatState>((set, get) => {
     
     const connectWebSocket = (sessionId: string) => {
@@ -54,7 +61,6 @@ export const useChatStore = create<ChatState>((set, get) => {
                         timestamp: Date.now()
                     };
                     const updatedWithCode = [...currentMessages, codeMsg];
-                    // If charts or files were generated, append a file visualization bubble
                     const imageFiles = payload.files ? payload.files.filter((f: any) => f.type.startsWith('image/')) : [];
                     if (imageFiles.length > 0) {
                         const chartMsg: Message = {
@@ -79,7 +85,6 @@ export const useChatStore = create<ChatState>((set, get) => {
                     }));
                     break;
                 case 'turn_complete':
-                    // Append final synthesized response
                     const responseMsg: Message = {
                         id: `resp-${Date.now()}`,
                         role: 'assistant',
@@ -111,6 +116,8 @@ export const useChatStore = create<ChatState>((set, get) => {
                         isLoading: false,
                         loadingStatus: null
                     }));
+                    // Refresh session titles/timestamps
+                    get().fetchSessions();
                     break;
                 case 'error':
                     const errorMsg: Message = {
@@ -139,18 +146,40 @@ export const useChatStore = create<ChatState>((set, get) => {
             console.error('WebSocket error:', err);
         };
     };
+
     return {
         sessions: [],
+        archivedSessions: [],
         activeSessionId: null,
         messages: {},
         isLoading: false,
         loadingStatus: null,
-        init: async () => {
+
+        fetchSessions: async () => {
             try {
                 const res = await fetch(`${BACKEND_URL}/api/sessions`);
                 const sessions = await res.json();
-                
                 set({ sessions });
+            } catch (err) {
+                console.error('Failed to fetch sessions:', err);
+            }
+        },
+
+        fetchArchivedSessions: async () => {
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/sessions?archived_only=true`);
+                const archivedSessions = await res.json();
+                set({ archivedSessions });
+            } catch (err) {
+                console.error('Failed to fetch archived sessions:', err);
+            }
+        },
+
+        init: async () => {
+            try {
+                await get().fetchSessions();
+                await get().fetchArchivedSessions();
+                const { sessions } = get();
                 if (sessions.length > 0) {
                     await get().setCurrentSession(sessions[0].id);
                 } else {
@@ -160,15 +189,15 @@ export const useChatStore = create<ChatState>((set, get) => {
                 console.error('Failed to initialize chat store:', err);
             }
         },
+
         setCurrentSession: async (sessionId) => {
             set({ activeSessionId: sessionId });
             
             try {
                 const res = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/messages`);
                 const backendMessages = await res.json();
-                // Format messages (prefix URLs with API path)
                 const formattedMessages: Message[] = backendMessages
-                    .filter((m: any) => m.role !== 'system') // Filter system prompts from render
+                    .filter((m: any) => m.role !== 'system')
                     .map((msg: any, index: number) => ({
                         id: msg.id || `msg-${index}-${Date.now()}`,
                         role: msg.role,
@@ -190,6 +219,7 @@ export const useChatStore = create<ChatState>((set, get) => {
                 console.error(`Failed to load messages for session ${sessionId}:`, err);
             }
         },
+
         createNewSession: async () => {
             try {
                 const res = await fetch(`${BACKEND_URL}/api/sessions`, { method: 'POST' });
@@ -212,6 +242,65 @@ export const useChatStore = create<ChatState>((set, get) => {
                 console.error('Failed to create new session:', err);
             }
         },
+
+        archiveSession: async (sessionId: string) => {
+            try {
+                await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/archive`, { method: 'POST' });
+                await get().fetchSessions();
+                await get().fetchArchivedSessions();
+
+                // If currently viewing the session that just got archived, switch to next active session
+                const { activeSessionId, sessions } = get();
+                if (activeSessionId === sessionId) {
+                    if (sessions.length > 0) {
+                        await get().setCurrentSession(sessions[0].id);
+                    } else {
+                        await get().createNewSession();
+                    }
+                }
+            } catch (err) {
+                console.error(`Failed to archive session ${sessionId}:`, err);
+            }
+        },
+
+        unarchiveSession: async (sessionId: string) => {
+            try {
+                await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/unarchive`, { method: 'POST' });
+                await get().fetchSessions();
+                await get().fetchArchivedSessions();
+            } catch (err) {
+                console.error(`Failed to unarchive session ${sessionId}:`, err);
+            }
+        },
+
+        deleteSession: async (sessionId: string) => {
+            try {
+                await fetch(`${BACKEND_URL}/api/sessions/${sessionId}`, { method: 'DELETE' });
+
+                // Remove from messages cache
+                set((state) => {
+                    const updatedMessages = { ...state.messages };
+                    delete updatedMessages[sessionId];
+                    return { messages: updatedMessages };
+                });
+
+                await get().fetchSessions();
+                await get().fetchArchivedSessions();
+
+                // If currently viewing the deleted session, switch or create new
+                const { activeSessionId, sessions } = get();
+                if (activeSessionId === sessionId) {
+                    if (sessions.length > 0) {
+                        await get().setCurrentSession(sessions[0].id);
+                    } else {
+                        await get().createNewSession();
+                    }
+                }
+            } catch (err) {
+                console.error(`Failed to delete session ${sessionId}:`, err);
+            }
+        },
+
         sendMessage: async (content, files) => {
             const { activeSessionId, messages } = get();
             if (!activeSessionId) return;
@@ -255,7 +344,6 @@ export const useChatStore = create<ChatState>((set, get) => {
                 isLoading: true,
                 loadingStatus: 'Sending message...'
             }));
-            // Emit prompt payload to live agent run via WebSocket
             if (activeWs && activeWs.readyState === WebSocket.OPEN) {
                 activeWs.send(JSON.stringify({
                     type: 'message',

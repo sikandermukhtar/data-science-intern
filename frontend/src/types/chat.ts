@@ -17,4 +17,5 @@ export interface ChatSession {
     id: string;
     title: string;
     updatedAt: number;
+    isArchived?: boolean;
 }
