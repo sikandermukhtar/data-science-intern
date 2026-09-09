@@ -7,7 +7,7 @@ class SessionModel(BaseModel):
     title: str = "New Session"
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)
-    is_archieved: bool = False
+    is_archived: bool = False
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 class MessageModel(BaseModel):

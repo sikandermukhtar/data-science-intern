@@ -40,7 +40,7 @@ def init_db():
 
         cursor.execute(
             """
-            CREATE TABLE IF NOT EXIST sessions(
+            CREATE TABLE IF NOT EXISTS sessions(
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL DEFAULT 'New Session',
                 created_at REAL NOT NULL,

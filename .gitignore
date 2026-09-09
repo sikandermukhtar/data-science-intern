@@ -15,3 +15,5 @@ frontend/public/correlation_heatmap.svg
 frontend/public/outcome_distribution.svg
 sessions/
 sandbox/
+data/agent.db
+data/
