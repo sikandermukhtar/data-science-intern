@@ -1,7 +1,6 @@
-import json
-from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from agent.configs.config import agent_settings
+from agent.db.repository import session_repo
 
 DEFAULT_SUPERVISOR_PROMPT = """You are a Lead Data Science Supervisor. Your job is to orchestrate a team of Data Science Workers to solve the user's data science goals.
 When a user asks a question or provides a dataset, follow this process:
@@ -12,6 +11,7 @@ When a user asks a question or provides a dataset, follow this process:
 6. Compile and synthesize the results, then provide a comprehensive final answer to the user containing markdown tables, summaries, and lists of output files.
 You must only keep high-level summaries of worker results in your main context. Do not clutter your history with all code trial-and-error logs; keep those isolated in the workers' contexts.
 """
+
 DEFAULT_WORKER_PROMPT = """You are an expert Data Science Worker. Your task is to write and execute python code to accomplish: {task_description}.
 
 You have access to a Local Python Sandbox where you can run code.
@@ -29,59 +29,68 @@ Guidelines for your code:
 If your code fails, you will receive the error message. Analyze the error and correct your code.
 """
 
+
 class ContextManager:
+    """
+    Manages session context, loading and saving conversation turns directly to SQLite DB.
+    """
     def __init__(self, session_id: str):
         self.session_id = session_id
-        self.session_dir = agent_settings.BASE_DIR / "sessions" / session_id
-        self.session_dir.mkdir(parents=True, exist_ok=True)
-        self.context_file = self.session_dir / "context.json"
+        self.session_repo = session_repo
+
+        # Ensure session exists in the database
+        if not self.session_repo.get_session(session_id):
+            self.session_repo.create_session(session_id)
 
         self.messages: List[Dict[str, Any]] = []
         self.load_context()
 
+        # If empty conversation, initialize with supervisor system prompt
         if not self.messages:
             self.set_system_prompt(DEFAULT_SUPERVISOR_PROMPT)
 
     def load_context(self):
-        """Loads context messages (from disk for now, will be replaced by database)."""
-        if self.context_file.exists():
-            try:
-                with open(self.context_file, "r") as f:
-                    self.messages = json.load(f)
-            except Exception:
-                self.messages = []
-        else:
-            self.messages = []
-
-    def save_context(self):
-        """Saves current context messages"""
-        try:
-            with open(self.context_file, "w") as f:
-                json.dump(self.messages, f, indent=2)
-        except Exception as e:
-            print(f"Context couldn't be saved for the session {self.session_id}: {e}")
+        """Loads conversation messages from the SQLite database."""
+        self.messages = self.session_repo.get_messages(self.session_id)
 
     def set_system_prompt(self, prompt: str):
-        """Ensures the first message is the system prompt."""
-        if self.messages and self.messages[0]["role"] == "system":
-            self.messages[0]["content"] = prompt
-        else:
-            self.messages.insert(0, {"role": "system", "content": prompt})
-        self.save_context()
+        """Ensures the supervisor system prompt is present in the database."""
+        if not any(m.get("role") == "system" for m in self.messages):
+            self.session_repo.add_message(
+                session_id=self.session_id,
+                role="system",
+                content=prompt,
+                sender="supervisor"
+            )
+            self.load_context()
 
-    def add_message(self, role: str, content: str, **kwargs):
-        """Adds a message to history"""
-        message = {"role": role, "content": content}
-        message.update(kwargs)
-        self.messages.append(message)
-        self.save_context()
+    def add_message(
+        self,
+        role: str,
+        content: str,
+        files: Optional[List[Dict[str, Any]]] = None,
+        turn_id: Optional[str] = None,
+        sender: str = "supervisor",
+        **kwargs
+    ):
+        """Persists a message to the SQLite messages table and updates in-memory history."""
+        self.session_repo.add_message(
+            session_id=self.session_id,
+            role=role,
+            content=content,
+            files=files,
+            turn_id=turn_id,
+            sender=sender,
+            metadata=kwargs
+        )
+        self.load_context()
 
     def get_messages(self) -> List[Dict[str, Any]]:
-        """Returns the list of messages in LiteLLM format."""
+        """Returns the list of messages in LiteLLM / OpenAI format."""
         return self.messages
 
     def clear(self):
-        """Clears session logs"""
-        system_message = next((m for m in self.messages if m["role"] == "system"), None)
-        self.messages = [system_message] if system_message else [{"role": "system", "content": DEFAULT_SUPERVISOR_PROMPT}]
-        self.save_context()
+        """Clears session messages from the database and resets to system prompt."""
+        self.session_repo.clear_messages(self.session_id)
+        self.set_system_prompt(DEFAULT_SUPERVISOR_PROMPT)
+        self.load_context()

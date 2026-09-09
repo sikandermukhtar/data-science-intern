@@ -1,3 +1,4 @@
+import uuid
 import json
 import re
 import traceback
@@ -8,9 +9,11 @@ from agent.configs.config import agent_settings
 from agent.core.session import get_or_create_session, EventType, OperationType
 from agent.core.execution_engine import TaskExecutionEngine
 from agent.tools.sandbox import PythonSandbox
+from agent.db.repository import session_repo
 
 class AgentState(TypedDict):
     session_id: str
+    turn_id: str
     messages: List[Dict[str, Any]]
     tasks: List[Dict[str, Any]]
     current_task_idx: int
@@ -191,6 +194,19 @@ async def worker_dispatch_node(state: AgentState) -> Dict[str, Any]:
     task_desc = tasks[current_idx]["description"]
     engine = TaskExecutionEngine(session_id)
     result = await engine.execute_task(task_desc)
+    # Record subagent worker execution in SQLite
+    session_repo.record_subagent_task(
+        session_id=session_id,
+        turn_id=state.get("turn_id"),
+        task_index=current_idx + 1,
+        task_description=task_desc,
+        status="completed" if result["success"] else "failed",
+        code=result.get("code"),
+        stdout=result.get("stdout"),
+        stderr=result.get("stderr"),
+        files=result.get("files"),
+        attempts=result.get("attempts", 1)
+    )
 
     tasks[current_idx]["status"] = "completed" if result["success"] else "failed"
     session_state.current_tasks = tasks
@@ -236,10 +252,11 @@ async def run_agent_loop(session_id: str):
     session_state.current_operation = OperationType.USER_PROMPT
 
     try:
+        turn_id = str(uuid.uuid4())
         messages = session_state.context_manager.get_messages()
-        
         initial_state = {
             "session_id": session_id,
+            "turn_id": turn_id,
             "messages": messages,
             "tasks": [],
             "current_task_idx": 0,
